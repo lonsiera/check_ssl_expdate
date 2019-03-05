@@ -1,0 +1,102 @@
+#!/bin/sh
+# 
+# check_ssl_expdate
+# by Oleg O.
+#
+# Checks an X.509 certificate:
+# - check expiration date for ssl certificates
+#
+# Install to /usr/lib64/nagios/plugins/check_ssl_expdate
+#
+# chmod +x /usr/lib64/nagios/plugins/check_ssl_expdate
+#
+# Use in nrpe:
+# command[check_ssl]=/usr/lib64/nagios/plugins/check_ssl_expdate -f /path/to/ssl/cert -c 3 -w 10
+
+while true; do
+
+        case "$1" in
+            -f|--file)
+                if [ $# -gt 1 ]; then
+                    FILE="$2"
+                    shift 2
+                else
+                    unknown "-f,--file requires an argument"
+                fi
+                ;;
+            ########################################
+            # Options with arguments
+            -c|--critical)
+                if [ $# -gt 1 ]; then
+                    CRITICAL="$2"
+                    shift 2
+                else
+                   unknown "-c,--critical requires an argument"
+                fi
+                ;;
+
+            -w|--warning)
+                if [ $# -gt 1 ]; then
+                    WARNING="$2"
+                    shift 2
+                else
+                    unknown "-w,--warning requires an argument"
+                fi
+                ;;
+
+           ########################################
+            # Special
+            --)
+                shift
+                break
+                ;;
+            -*)
+                unknown "invalid option: ${1}"
+                ;;
+            *)
+                if [ -n "$1" ] ; then
+                    unknown "invalid option: ${1}"
+                fi
+                break
+                ;;
+        esac
+
+    done
+
+
+    if [ -n "${CRITICAL}" ] ; then
+
+        if ! echo "${CRITICAL}" | grep -q '[0-9][0-9]*' ; then
+            unknown "invalid number of days ${CRITICAL}"
+        fi
+
+    fi
+
+    if [ -n "${WARNING}" ] ; then
+
+        if ! echo "${WARNING}" | grep -q '[0-9][0-9]*' ; then
+            unknown "invalid number of days ${WARNING}"
+        fi
+
+    fi
+
+DATEBIN="date"
+DOMAINNAME=$(openssl x509  -subject -noout -in "${FILE}" |sed -n '/^subject/s/^.*CN=//p')
+CERT_END_DATE=$(openssl x509 -in "${FILE}" -noout -enddate  | sed -e "s/.*=//")
+DAYS_VALID=$(( ( $(${DATEBIN} -d "${CERT_END_DATE}" +%s) - $(${DATEBIN} +%s) ) / 86400 ))
+HOST=$(hostname)
+
+
+    if [ $DAYS_VALID -lt $CRITICAL ] ; then
+        echo "SSL_CERT CRITICAL - ${HOST}: x509 certificate '${DOMAINNAME}' will expire in ${DAYS_VALID} day(s) on ${CERT_END_DATE}|days=${DAYS_VALID};${WARNING};${CRITICAL};;"
+        exit 2
+    fi
+
+    if [ $DAYS_VALID -lt $WARNING ] ; then
+        echo "SSL_CERT WARN - ${HOST}: x509 certificate '${DOMAINNAME}' will expire in ${DAYS_VALID} day(s) on ${CERT_END_DATE}|days=${DAYS_VALID};${WARNING};${CRITICAL};;"
+        exit 1
+    fi
+
+
+ echo "SSL_CERT OK - ${HOST} : x509 certificate '${DOMAINNAME}' valid until ${CERT_END_DATE} (expires in ${DAYS_VALID} days)|days=${DAYS_VALID};${WARNING};${CRITICAL};;"
+ exit 0
